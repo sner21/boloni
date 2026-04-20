@@ -1,5 +1,5 @@
 ﻿/**
- * 封装豆包/火山方舟和 mock 大模型能力，用于博洛尼供应商履约评分和定制订单摘要。
+ * 封装 GLM-4.7/火山方舟和 mock 大模型能力，用于博洛尼供应商履约评分和定制订单摘要。
  */
 
 import { riskResultSchema } from "@/lib/schemas/base";
@@ -87,10 +87,12 @@ export async function makeSummary(input: SummaryInput) {
 /**
  * 判断当前是否应该调用真实火山方舟接口。
  *
- * @returns 配置了 doubao provider 且存在 API key 时返回 true。
+ * @returns 配置了 ark provider 且存在 API key 时返回 true。
  */
 function shouldCallArk() {
-  return process.env.AI_PROVIDER === "doubao" && Boolean(process.env.ARK_API_KEY);
+  // Provider 名称，只有显式配置 ark 时才调用火山方舟真实模型。
+  const provider = process.env.AI_PROVIDER;
+  return provider === "ark" && Boolean(process.env.ARK_API_KEY);
 }
 
 /**
@@ -103,8 +105,8 @@ function shouldCallArk() {
 async function callArk(messages: ChatMessage[], json: boolean) {
   // 火山方舟 API 基础地址。
   const baseUrl = process.env.ARK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
-  // 火山方舟模型 ID，必须是控制台已开通的模型。
-  const model = process.env.ARK_MODEL ?? "doubao-lite-32k";
+  // 火山方舟模型 ID，默认使用用户在控制台选择的 GLM-4.7。
+  const model = process.env.ARK_MODEL ?? "glm-4-7";
   // Chat Completions HTTP 响应。
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",

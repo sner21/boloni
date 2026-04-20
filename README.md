@@ -69,16 +69,16 @@ npm run dev
 AI_PROVIDER=mock
 ```
 
-接入豆包 / 火山方舟时配置：
+接入 GLM-4.7 / 火山方舟时配置：
 
 ```bash
-AI_PROVIDER=doubao
+AI_PROVIDER=ark
 ARK_API_KEY=your_key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-ARK_MODEL=your_enabled_model_id
+ARK_MODEL=glm-4-7
 ```
 
-建议在火山方舟控制台选择已开通的低价 Doubao Lite、Mini 或 Flash 类模型。代码会在接口失败时回退到 mock 结果，保证演示流程不中断。
+请先在火山方舟控制台开通 `glm-4-7`，再把可用密钥写入 `ARK_API_KEY`。代码会在接口失败时回退到 mock 结果，保证演示流程不中断。
 
 ## 线上部署
 

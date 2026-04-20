@@ -36,7 +36,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-mock}
       ARK_API_KEY: ${ARK_API_KEY:-}
       ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
-      ARK_MODEL: ${ARK_MODEL:-doubao-lite-32k}
+      ARK_MODEL: ${ARK_MODEL:-glm-4-7}
     ports:
       - "3000:3000"
     depends_on:
@@ -53,7 +53,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-mock}
       ARK_API_KEY: ${ARK_API_KEY:-}
       ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
-      ARK_MODEL: ${ARK_MODEL:-doubao-lite-32k}
+      ARK_MODEL: ${ARK_MODEL:-glm-4-7}
     depends_on:
       migrate:
         condition: service_completed_successfully

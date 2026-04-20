@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@next/env": "^15.5.15",
     "@scalar/nextjs-api-reference": "^0.8.17",
     "drizzle-orm": "^0.44.5",
     "lucide-react": "^0.468.0",

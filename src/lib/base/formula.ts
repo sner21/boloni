@@ -1,5 +1,5 @@
 ﻿/**
- * 安全计算公式字段的 AST，避免使用 eval 执行任意代码。
+ * 安全计算公式字段的 AST。
  */
 
 import type { FormulaNode } from "@/lib/schemas/base";
