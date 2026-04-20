@@ -1,0 +1,63 @@
+﻿# 编排 PostgreSQL、数据库迁移、Web 服务和可选 seed 服务。
+services:
+  # PostgreSQL 数据库服务。
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supply_base
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # 等待数据库可连接后再启动依赖服务。
+      test: ["CMD-SHELL", "pg_isready -U postgres -d supply_base"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # 数据库迁移服务，启动 Web 前先执行。
+  migrate:
+    build: .
+    command: npm run db:migrate
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/supply_base
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Next.js Web 应用服务。
+  web:
+    build: .
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/supply_base
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      ARK_MODEL: ${ARK_MODEL:-doubao-lite-32k}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # 可选演示数据初始化服务，通过 --profile seed 启用。
+  seed:
+    build: .
+    profiles: ["seed"]
+    command: npm run seed
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/supply_base
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      ARK_MODEL: ${ARK_MODEL:-doubao-lite-32k}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  # PostgreSQL 数据持久化卷。
+  pgdata:
