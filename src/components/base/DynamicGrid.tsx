@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { LinkCell } from "./LinkCell";
 import type { CellData, FieldMeta, RowData, TableData } from "./types";
@@ -16,6 +16,8 @@ type Props = {
   onPatch: (recordId: string, field: FieldMeta, value: unknown) => Promise<void>;
   /** 新增空记录的处理函数。 */
   onAdd: () => Promise<void>;
+  /** 当前表格数据是否正在加载。 */
+  loading?: boolean;
 };
 
 type GroupItem =
@@ -29,7 +31,7 @@ type GroupItem =
  * @param props 表格数据、编辑回调和新增记录回调。
  * @returns 可编辑、可分组、可折叠的表格组件。
  */
-export function DynamicGrid({ data, onPatch, onAdd }: Props) {
+export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
   // 一级分组字段 ID。
   const [groupOne, setGroupOne] = useState("");
   // 二级分组字段 ID。
@@ -46,10 +48,14 @@ export function DynamicGrid({ data, onPatch, onAdd }: Props) {
     [closed, fields, groupOne, groupTwo, rows],
   );
 
+  if (loading) {
+    return <LoadingBlock text="正在加载当前业务表数据..." />;
+  }
+
   if (!data) {
     return (
       <div className="workspace muted" style={{ padding: 22 }}>
-        请先初始化博洛尼演示数据。
+        请选择一张博洛尼业务表。
       </div>
     );
   }
@@ -173,51 +179,137 @@ function CellEditor({
 }) {
   // 当前单元格原始值。
   const value = cell?.value;
+  // 当前编辑草稿，只有点击确认时才同步后端。
+  const [draft, setDraft] = useState(() => draftFromValue(field, value));
+  // 当前单元格是否正在提交。
+  const [saving, setSaving] = useState(false);
+  // 当前后端值对应的草稿格式，用于判断是否已修改。
+  const initial = useMemo(() => draftFromValue(field, value), [field, value]);
+  // 当前草稿是否和后端值不同。
+  const dirty = !sameDraft(draft, initial);
+
+  useEffect(() => {
+    setDraft(initial);
+  }, [initial]);
+
+  /**
+   * 确认提交当前单元格草稿。
+   */
+  async function confirm() {
+    setSaving(true);
+    try {
+      await onCommit(valueFromDraft(field, draft));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (field.type === "formula") return <span className="readonly">{formatValue(value)}</span>;
   if (field.type === "link") return <LinkCell cell={cell ?? { value: [] }} field={field} onCommit={onCommit} />;
   if (field.type === "aiScore") return <ScoreCell value={value} />;
   if (field.type === "tag" || field.type === "singleSelect") {
-    return <OptionCell field={field} mode="single" value={value} onCommit={onCommit} />;
+    return (
+      <div className="cell-editor">
+        <OptionCell field={field} mode="single" value={draft} onChange={setDraft} />
+        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+      </div>
+    );
   }
   if (field.type === "multiSelect") {
-    return <OptionCell field={field} mode="multi" value={value} onCommit={onCommit} />;
+    return (
+      <div className="cell-editor">
+        <OptionCell field={field} mode="multi" value={draft} onChange={setDraft} />
+        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+      </div>
+    );
   }
   if (field.type === "aiText") {
     return (
-      <textarea className="cell-area" defaultValue={String(value ?? "")} onBlur={(e) => onCommit(e.target.value)} />
+      <div className="cell-editor">
+        <textarea className="cell-area" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
+        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+      </div>
     );
   }
   if (field.type === "number") {
     return (
-      <input
-        className="cell-input"
-        defaultValue={value == null ? "" : String(value)}
-        inputMode="decimal"
-        onBlur={(e) => onCommit(e.target.value)}
-      />
+      <div className="cell-editor">
+        <input
+          className="cell-input"
+          inputMode="decimal"
+          value={String(draft)}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+      </div>
     );
   }
   return (
-    <input className="cell-input" defaultValue={String(value ?? "")} onBlur={(e) => onCommit(e.target.value)} />
+    <div className="cell-editor">
+      <input className="cell-input" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
+      <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+    </div>
+  );
+}
+
+/**
+ * 渲染单元格确认和重置按钮。
+ * @param props 修改状态、提交状态、确认回调和重置回调。
+ * @returns 单元格编辑操作区。
+ */
+function EditActions({
+  dirty,
+  saving,
+  onConfirm,
+  onReset,
+}: {
+  dirty: boolean;
+  saving: boolean;
+  onConfirm: () => void;
+  onReset: () => void;
+}) {
+  if (!dirty) return null;
+  return (
+    <div className="cell-actions">
+      <button className="mini-btn primary" disabled={saving} onClick={onConfirm} type="button">
+        {saving ? "保存中" : "确认"}
+      </button>
+      <button className="mini-btn" disabled={saving} onClick={onReset} type="button">
+        重置
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 渲染表格局部加载状态。
+ * @param props 加载提示文本。
+ * @returns 表格加载占位。
+ */
+function LoadingBlock({ text }: { text: string }) {
+  return (
+    <div className="workspace loading-box">
+      <span className="loader" />
+      <strong>{text}</strong>
+    </div>
   );
 }
 
 /**
  * 渲染单选、多选和标签字段的可视化选项。
- * @param props 字段配置、选择模式、当前值和提交回调。
+ * @param props 字段配置、选择模式、当前草稿值和草稿变更回调。
  * @returns 标签式选择器。
  */
 function OptionCell({
   field,
   mode,
   value,
-  onCommit,
+  onChange,
 }: {
   field: FieldMeta;
   mode: "single" | "multi";
   value: unknown;
-  onCommit: (value: unknown) => void;
+  onChange: (value: unknown) => void;
 }) {
   // 字段配置中的可选项。
   const options = getOptions(field);
@@ -228,8 +320,8 @@ function OptionCell({
     return (
       <input
         className="cell-input"
-        defaultValue={mode === "multi" ? toList(value).join(", ") : String(value ?? "")}
-        onBlur={(event) => onCommit(mode === "multi" ? splitList(event.target.value) : event.target.value)}
+        value={mode === "multi" ? toList(value).join(", ") : String(value ?? "")}
+        onChange={(event) => onChange(mode === "multi" ? splitList(event.target.value) : event.target.value)}
       />
     );
   }
@@ -245,7 +337,7 @@ function OptionCell({
             <button
               className={`option-chip tone-${index % 6} ${active ? "active" : ""}`}
               key={option}
-              onClick={() => onCommit(toggleValue(selectedList, option))}
+              onClick={() => onChange(toggleValue(selectedList, option))}
               type="button"
             >
               {option}
@@ -262,7 +354,7 @@ function OptionCell({
         <button
           className={`option-chip tone-${index % 6} ${selected === option ? "active" : ""}`}
           key={option}
-          onClick={() => onCommit(option)}
+          onClick={() => onChange(option)}
           type="button"
         >
           {option}
@@ -418,6 +510,40 @@ function toList(value: unknown) {
  */
 function toggleValue(values: string[], option: string) {
   return values.includes(option) ? values.filter((item) => item !== option) : [...values, option];
+}
+
+/**
+ * 把后端单元格值转换成前端编辑草稿。
+ * @param field 字段元数据。
+ * @param value 后端单元格值。
+ * @returns 编辑器使用的草稿值。
+ */
+function draftFromValue(field: FieldMeta, value: unknown) {
+  if (field.type === "multiSelect") return toList(value);
+  if (field.type === "number") return value == null ? "" : String(value);
+  return value == null ? "" : String(value);
+}
+
+/**
+ * 把前端编辑草稿转换成后端单元格值。
+ * @param field 字段元数据。
+ * @param draft 当前编辑草稿。
+ * @returns 提交给后端的单元格值。
+ */
+function valueFromDraft(field: FieldMeta, draft: unknown) {
+  if (field.type === "multiSelect") return Array.isArray(draft) ? draft : toList(draft);
+  if (field.type === "number") return draft === "" ? null : draft;
+  return draft;
+}
+
+/**
+ * 比较两个草稿值是否一致。
+ * @param left 左侧草稿值。
+ * @param right 右侧草稿值。
+ * @returns 草稿值一致时返回 true。
+ */
+function sameDraft(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**

@@ -17,9 +17,7 @@ type Context = { params: Promise<{ tableId: string }> };
  */
 export async function POST(request: Request, context: Context) {
   try {
-    // 动态路由中的表 ID，Next.js 15 中 params 是 Promise。
     const { tableId } = await context.params;
-    // 已通过 Zod 校验的字段创建请求体。
     const body = await readJson(request, createFieldSchema);
     return ok(await addField(tableId, body));
   } catch (error) {

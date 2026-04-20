@@ -14,7 +14,7 @@ type Props = {
   /** 当前关联字段元数据，config 中包含 targetTableId。 */
   field: FieldMeta;
   /** 选择目标记录后的提交回调。 */
-  onCommit: (value: unknown) => void;
+  onCommit: (value: unknown) => Promise<void> | void;
 };
 
 /**
@@ -26,6 +26,10 @@ type Props = {
 export function LinkCell({ cell, field, onCommit }: Props) {
   // 目标表的记录数据，用于下拉选择。
   const [data, setData] = useState<TableData | null>(null);
+  // 当前关联选择草稿，点击确认后才提交后端。
+  const [draft, setDraft] = useState(cell.ids?.[0] ?? "");
+  // 当前关联单元格是否正在保存。
+  const [saving, setSaving] = useState(false);
   // 关联字段配置中的目标表 ID。
   const targetTableId = String(field.config.targetTableId ?? "");
 
@@ -37,16 +41,34 @@ export function LinkCell({ cell, field, onCommit }: Props) {
       .catch(() => setData(null));
   }, [targetTableId]);
 
-  // 当前已选中的目标记录 ID，MVP 中默认展示第一条关联。
+  useEffect(() => {
+    setDraft(cell.ids?.[0] ?? "");
+  }, [cell.ids]);
+
+  // 当前已保存的目标记录 ID，MVP 中默认展示第一条关联。
   const selected = cell.ids?.[0] ?? "";
+  // 当前关联草稿是否已修改。
+  const dirty = draft !== selected;
   // 下拉选择项，使用目标记录的首个文本类字段作为标题。
   const choices = useMemo(() => {
     if (!data) return [];
     return data.records.map((row) => ({ id: row.id, title: rowTitle(data, row.id) }));
   }, [data]);
 
+  /**
+   * 确认提交当前关联草稿。
+   */
+  async function confirm() {
+    setSaving(true);
+    try {
+      await onCommit(draft ? [draft] : []);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div>
+    <div className="cell-editor">
       <div className="chip-row">
         {cell.display?.map((item) => (
           <span className="chip" key={item.id}>
@@ -54,7 +76,7 @@ export function LinkCell({ cell, field, onCommit }: Props) {
           </span>
         ))}
       </div>
-      <select className="cell-select" value={selected} onChange={(event) => onCommit([event.target.value])}>
+      <select className="cell-select" value={draft} onChange={(event) => setDraft(event.target.value)}>
         <option value="">选择记录</option>
         {choices.map((item) => (
           <option value={item.id} key={item.id}>
@@ -62,6 +84,16 @@ export function LinkCell({ cell, field, onCommit }: Props) {
           </option>
         ))}
       </select>
+      {dirty ? (
+        <div className="cell-actions">
+          <button className="mini-btn primary" disabled={saving} onClick={confirm} type="button">
+            {saving ? "保存中" : "确认"}
+          </button>
+          <button className="mini-btn" disabled={saving} onClick={() => setDraft(selected)} type="button">
+            重置
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
