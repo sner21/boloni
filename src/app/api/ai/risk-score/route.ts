@@ -14,7 +14,6 @@ import { riskReqSchema } from "@/lib/schemas/base";
  */
 export async function POST(request: Request) {
   try {
-    // 已通过 Zod 校验的 AI 风险评分请求体。
     const body = await readJson(request, riskReqSchema);
     return ok(await scoreSupplier(body.recordId));
   } catch (error) {
