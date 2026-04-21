@@ -1,11 +1,18 @@
 /**
- * 组合博洛尼全屋定制协同台主界面，负责页面导航、表切换、AI 操作和数据刷新。
+ * 组合博洛尼全屋定制协同台主界面，负责侧栏导航、页面切换和业务数据刷新。
  */
 
 "use client";
 
-import { RefreshCw, Sparkles } from "lucide-react";
+import Image from "next/image";
+import { ChevronLeft, ChevronRight, LayoutDashboard, RefreshCw, SlidersHorizontal, Sparkles, Table2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 import { Dashboard } from "./Dashboard";
 import { DynamicGrid } from "./DynamicGrid";
@@ -16,15 +23,13 @@ type AppPage = "table" | "dashboard" | "fields";
 
 /**
  * 渲染博洛尼定制协同台主应用。
- *
- * @returns 博洛尼全屋定制供应链协同台页面。
  */
 export function SupplyApp() {
-  // 当前应用页面，切换时先更新页面框架，再让各数据区独立加载。
+  // 当前应用页面，切换时先切页面框架，再局部加载内容。
   const [page, setPage] = useState<AppPage>("table");
   // 左侧导航是否收起。
   const [collapsed, setCollapsed] = useState(false);
-  // 当前系统中的表列表，包含供应商、产品和定制订单三类业务表。
+  // 当前系统中的表列表。
   const [tables, setTables] = useState<TableMeta[]>([]);
   // 当前选中的表 ID。
   const [selected, setSelected] = useState("");
@@ -38,16 +43,18 @@ export function SupplyApp() {
   const [loadingData, setLoadingData] = useState(false);
   // 仪表盘加载状态。
   const [loadingDash, setLoadingDash] = useState(false);
-  // 页面状态提示文本，面向演示操作者展示当前动作结果。
+  // 页面状态提示文本。
   const [status, setStatus] = useState("博洛尼定制协同台准备就绪。");
 
   // 当前选中的表元数据。
   const selectedTable = useMemo(() => tables.find((table) => table.id === selected), [selected, tables]);
-  // 当前表对应的业务操作按钮。
+  // 当前表对应的业务动作按钮。
   const tableActions = useMemo(() => buildActions(data?.table.slug), [data?.table.slug]);
+  // 顶部高密度状态条。
+  const pageStats = useMemo(() => buildPageStats(page, data, dash, selectedTable), [dash, data, page, selectedTable]);
 
   /**
-   * 加载表列表，并在未选中表时默认选择第一张表。
+   * 加载业务表列表，并在未选中表时默认选择第一张表。
    */
   const loadTables = useCallback(async () => {
     setLoadingTables(true);
@@ -95,7 +102,7 @@ export function SupplyApp() {
   }, []);
 
   /**
-   * 同时刷新当前页面所需数据。
+   * 刷新当前页面所需数据。
    */
   const refresh = useCallback(async () => {
     await loadTables();
@@ -179,7 +186,7 @@ export function SupplyApp() {
   }
 
   /**
-   * 执行库存预警自动化并刷新数据。
+   * 执行交付预警自动化并刷新数据。
    */
   async function runWarning() {
     setStatus("正在执行定制交付预警...");
@@ -191,100 +198,172 @@ export function SupplyApp() {
 
   return (
     <main className={`app-shell ${collapsed ? "collapsed" : ""}`}>
-      <aside className="side">
-        <button className="collapse-btn" onClick={() => setCollapsed((value) => !value)} type="button">
-          {collapsed ? "展开" : "收起"}
-        </button>
-        <div className="brand">
-          <div>
-            <h1>{collapsed ? "B" : "Boloni Base"}</h1>
-            {!collapsed ? <span>全屋定制供应链工作台</span> : null}
-          </div>
-          <Sparkles size={22} />
-        </div>
-        <nav className="nav-list">
-          <NavButton active={page === "dashboard"} collapsed={collapsed} label="仪表盘" mark="仪" onClick={() => setPage("dashboard")} />
-          <NavButton active={page === "fields"} collapsed={collapsed} label="字段管理" mark="字" onClick={() => setPage("fields")} />
-          {!collapsed ? <span className="nav-group">业务表</span> : null}
-          {loadingTables ? <div className="nav-loading">加载中</div> : null}
-          {tables.map((table) => (
-            <NavButton
-              active={page === "table" && table.id === selected}
+      <aside className="side-shell">
+        <Card className="side-card side-brand">
+          <CardContent className="side-brand-body">
+            <div className="brand-copy">
+              <h1>Boloni Base</h1>
+              {!collapsed ? <p>全屋定制供应链工作台</p> : null}
+            </div>
+            <Button onClick={() => setCollapsed((current) => !current)} size="icon" type="button" variant="ghost">
+              {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {!collapsed ? (
+          <Card className="side-card side-image-card">
+            <CardContent className="side-image-body">
+              <Image
+                alt="博洛尼全屋定制空间"
+                className="side-image"
+                height={360}
+                priority
+                src="/images/boloni-space.jpg"
+                width={540}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card className="side-card side-menu-card">
+          <CardContent className="side-menu-body">
+            <div className="menu-group">页面</div>
+            <MenuButton
+              active={page === "dashboard"}
               collapsed={collapsed}
-              key={table.id}
-              label={table.name}
-              mark={table.name.slice(0, 1)}
-              onClick={() => openTable(table.id)}
+              icon={<LayoutDashboard size={16} />}
+              label="仪表盘"
+              onClick={() => setPage("dashboard")}
             />
-          ))}
-        </nav>
+            <MenuButton
+              active={page === "fields"}
+              collapsed={collapsed}
+              icon={<SlidersHorizontal size={16} />}
+              label="字段管理"
+              onClick={() => setPage("fields")}
+            />
+            <Separator />
+            {!collapsed ? <div className="menu-group">业务表</div> : null}
+            {loadingTables ? <div className="nav-loading">正在加载业务表...</div> : null}
+            {tables.map((table) => (
+              <MenuButton
+                active={page === "table" && table.id === selected}
+                collapsed={collapsed}
+                icon={<Table2 size={16} />}
+                key={table.id}
+                label={table.name}
+                onClick={() => openTable(table.id)}
+              />
+            ))}
+          </CardContent>
+        </Card>
       </aside>
 
-      <section className="main">
-        <header className="topbar">
-          <div>
-            <h2>{pageTitle(page, selectedTable)}</h2>
-            <p>{pageDesc(page, data, loadingData)}</p>
-          </div>
-          <div className="actions">
-            {page === "table" && tableActions.includes("risk") ? (
-              <button className="btn" onClick={() => runAi("risk")} type="button">
-                <Sparkles size={15} /> 供应商履约评分
-              </button>
-            ) : null}
-            {page === "table" && tableActions.includes("summary") ? (
-              <button className="btn" onClick={() => runAi("summary")} type="button">
-                <Sparkles size={15} /> 定制订单摘要
-              </button>
-            ) : null}
-            {page === "table" && tableActions.includes("warning") ? (
-              <button className="btn" onClick={runWarning} type="button">
-                交付预警
-              </button>
-            ) : null}
-            <button className="btn secondary" onClick={refresh} type="button">
-              <RefreshCw size={15} /> 刷新
-            </button>
-          </div>
-        </header>
-        <div className="status-row">
-          <span className="status">{status}</span>
+      <section className="main-shell">
+        <Card className="page-head">
+          <CardContent className="page-head-body">
+            <div className="page-head-main">
+              <div className="page-copy">
+                <div className="page-copy-top">
+                  <Badge>{pageBadge(page)}</Badge>
+                  {selectedTable ? <Badge>{selectedTable.slug}</Badge> : null}
+                </div>
+                <h2>{pageTitle(page, selectedTable)}</h2>
+                <p>{pageDesc(page, data, loadingData)}</p>
+              </div>
+
+              <div className="page-actions">
+                {page === "table" && tableActions.includes("risk") ? (
+                  <Button onClick={() => runAi("risk")} type="button">
+                    <Sparkles size={15} /> 供应商履约评分
+                  </Button>
+                ) : null}
+                {page === "table" && tableActions.includes("summary") ? (
+                  <Button onClick={() => runAi("summary")} type="button">
+                    <Sparkles size={15} /> 定制订单摘要
+                  </Button>
+                ) : null}
+                {page === "table" && tableActions.includes("warning") ? (
+                  <Button onClick={runWarning} type="button">
+                    <Sparkles size={15} /> 交付预警
+                  </Button>
+                ) : null}
+                <Button onClick={refresh} type="button" variant="outline">
+                  <RefreshCw size={15} /> 刷新
+                </Button>
+              </div>
+            </div>
+
+            <div className="page-stats">
+              {pageStats.map((item) => (
+                <div className="page-stat" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="page-status">
+              <span>{status}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="page-body">
+          {page === "dashboard" ? <Dashboard data={dash} loading={loadingDash} /> : null}
+          {page === "fields" ? (
+            <FieldPanel fields={data?.fields ?? []} onCreated={refresh} setStatus={setStatus} table={selectedTable} tables={tables} />
+          ) : null}
+          {page === "table" ? <DynamicGrid data={data} loading={loadingData} onAdd={addRecord} onPatch={patchCell} /> : null}
         </div>
-        {page === "dashboard" ? <Dashboard data={dash} loading={loadingDash} /> : null}
-        {page === "fields" ? (
-          <FieldPanel fields={data?.fields ?? []} tableId={selected} tables={tables} onCreated={refresh} setStatus={setStatus} />
-        ) : null}
-        {page === "table" ? <DynamicGrid data={data} loading={loadingData} onAdd={addRecord} onPatch={patchCell} /> : null}
       </section>
     </main>
   );
 }
 
 /**
- * 渲染侧栏导航按钮。
+ * 渲染左侧菜单按钮。
  *
- * @param props 导航按钮状态、折叠状态、文案和点击事件。
- * @returns 侧栏导航按钮。
+ * @param props 选中状态、折叠状态、图标、文案和点击事件。
  */
-function NavButton({
+function MenuButton({
   active,
   collapsed,
+  icon,
   label,
-  mark,
   onClick,
 }: {
   active: boolean;
   collapsed: boolean;
+  icon: ReactNode;
   label: string;
-  mark: string;
   onClick: () => void;
 }) {
   return (
-    <button className={`nav-button ${active ? "active" : ""}`} onClick={onClick} title={label} type="button">
-      <span className="nav-mark">{mark}</span>
+    <Button
+      className={`menu-button ${active ? "active" : ""} ${collapsed ? "icon-only" : ""}`}
+      onClick={onClick}
+      title={label}
+      type="button"
+      variant="ghost"
+    >
+      <span className="menu-icon">{icon}</span>
       {!collapsed ? <span>{label}</span> : null}
-    </button>
+    </Button>
   );
+}
+
+/**
+ * 按当前页面生成顶部徽标文本。
+ *
+ * @param page 当前页面。
+ * @returns 页面徽标文案。
+ */
+function pageBadge(page: AppPage) {
+  if (page === "dashboard") return "概览";
+  if (page === "fields") return "配置";
+  return "工作区";
 }
 
 /**
@@ -309,10 +388,46 @@ function pageTitle(page: AppPage, table?: TableMeta) {
  * @returns 页面说明文本。
  */
 function pageDesc(page: AppPage, data: TableData | null, loading: boolean) {
-  if (page === "dashboard") return "采购总金额统计和各风险等级供应商数量分布。";
-  if (page === "fields") return "新增字段并配置关联、选项和公式模板。";
+  if (page === "dashboard") return "采购总金额和风险等级分布集中展示，方便快速做业务判断。";
+  if (page === "fields") return "关联、选项和公式字段都在这里配置，字段创建仍然保留为独立页面。";
   if (loading) return "正在加载当前业务表数据。";
   return data ? `${data.records.length} 条记录 · ${data.fields.length} 个字段` : "请选择一张业务表。";
+}
+
+/**
+ * 根据当前页面生成顶部统计条。
+ *
+ * @param page 当前页面。
+ * @param data 当前业务表数据。
+ * @param dash 仪表盘数据。
+ * @param table 当前表元数据。
+ * @returns 统计条数组。
+ */
+function buildPageStats(page: AppPage, data: TableData | null, dash: DashboardData | null, table?: TableMeta) {
+  if (page === "dashboard") {
+    return [
+      { label: "采购总金额", value: String(dash?.totalAmount ?? 0) },
+      { label: "风险层级", value: String(dash?.riskDist.length ?? 0) },
+      { label: "交付预警", value: String(dash?.warnings.length ?? 0) },
+      { label: "业务范围", value: "全屋定制" },
+    ];
+  }
+
+  if (page === "fields") {
+    return [
+      { label: "当前表", value: table?.name ?? "未选择" },
+      { label: "字段总数", value: String(data?.fields.length ?? 0) },
+      { label: "关联字段", value: String(data?.fields.filter((field) => field.type === "link").length ?? 0) },
+      { label: "公式字段", value: String(data?.fields.filter((field) => field.type === "formula").length ?? 0) },
+    ];
+  }
+
+  return [
+    { label: "当前表", value: table?.name ?? "未选择" },
+    { label: "记录", value: String(data?.records.length ?? 0) },
+    { label: "字段", value: String(data?.fields.length ?? 0) },
+    { label: "业务动作", value: String(buildActions(table?.slug).length) },
+  ];
 }
 
 /**

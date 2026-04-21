@@ -1,10 +1,14 @@
-﻿/**
+/**
  * 渲染关联字段单元格，并从目标表加载可关联记录。
  */
 
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 
 import type { CellData, FieldMeta, TableData } from "./types";
 
@@ -17,11 +21,13 @@ type Props = {
   onCommit: (value: unknown) => Promise<void> | void;
 };
 
+// 目标表记录缓存，避免同一张表在多个关联单元格中重复请求。
+const tableCache = new Map<string, Promise<TableData | null>>();
+
 /**
  * 渲染关联记录选择器。
  *
  * @param props 当前单元格、字段配置和提交回调。
- * @returns 关联记录展示与选择控件。
  */
 export function LinkCell({ cell, field, onCommit }: Props) {
   // 目标表的记录数据，用于下拉选择。
@@ -35,8 +41,7 @@ export function LinkCell({ cell, field, onCommit }: Props) {
 
   useEffect(() => {
     if (!targetTableId) return;
-    fetch(`/api/tables/${targetTableId}/records`)
-      .then((res) => res.json())
+    loadTable(targetTableId)
       .then(setData)
       .catch(() => setData(null));
   }, [targetTableId]);
@@ -52,7 +57,7 @@ export function LinkCell({ cell, field, onCommit }: Props) {
   // 下拉选择项，使用目标记录的首个文本类字段作为标题。
   const choices = useMemo(() => {
     if (!data) return [];
-    return data.records.map((row) => ({ id: row.id, title: rowTitle(data, row.id) }));
+    return data.records.map((row) => ({ value: row.id, label: rowTitle(data, row.id) }));
   }, [data]);
 
   /**
@@ -71,31 +76,42 @@ export function LinkCell({ cell, field, onCommit }: Props) {
     <div className="cell-editor">
       <div className="chip-row">
         {cell.display?.map((item) => (
-          <span className="chip" key={item.id}>
+          <Badge className="chip" key={item.id}>
             {item.title}
-          </span>
+          </Badge>
         ))}
       </div>
-      <select className="cell-select" value={draft} onChange={(event) => setDraft(event.target.value)}>
-        <option value="">选择记录</option>
-        {choices.map((item) => (
-          <option value={item.id} key={item.id}>
-            {item.title}
-          </option>
-        ))}
-      </select>
+      <Select onValueChange={setDraft} options={choices} placeholder="选择记录" value={draft} />
       {dirty ? (
         <div className="cell-actions">
-          <button className="mini-btn primary" disabled={saving} onClick={confirm} type="button">
+          <Button className="cell-btn" disabled={saving} onClick={confirm} size="sm" type="button">
             {saving ? "保存中" : "确认"}
-          </button>
-          <button className="mini-btn" disabled={saving} onClick={() => setDraft(selected)} type="button">
+          </Button>
+          <Button className="cell-btn" disabled={saving} onClick={() => setDraft(selected)} size="sm" type="button" variant="outline">
             重置
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
   );
+}
+
+/**
+ * 加载目标表记录，并为重复请求提供缓存。
+ *
+ * @param tableId 目标表 ID。
+ * @returns 目标表记录数据。
+ */
+async function loadTable(tableId: string) {
+  const cached = tableCache.get(tableId);
+  if (cached) return cached;
+
+  const task = fetch(`/api/tables/${tableId}/records`)
+    .then((res) => (res.ok ? (res.json() as Promise<TableData>) : null))
+    .catch(() => null);
+
+  tableCache.set(tableId, task);
+  return task;
 }
 
 /**

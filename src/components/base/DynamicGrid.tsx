@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 渲染可动态编辑的多维表格，并提供多级分组折叠、聚合统计和选项字段选择器。
  */
 
@@ -6,6 +6,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { LinkCell } from "./LinkCell";
 import type { CellData, FieldMeta, RowData, TableData } from "./types";
 
@@ -28,10 +34,10 @@ type GroupItem =
 
 /**
  * 渲染动态表格工作区。
+ *
  * @param props 表格数据、编辑回调和新增记录回调。
- * @returns 可编辑、可分组、可折叠的表格组件。
  */
-export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
+export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
   // 一级分组字段 ID。
   const [groupOne, setGroupOne] = useState("");
   // 二级分组字段 ID。
@@ -42,6 +48,21 @@ export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
   const rows = data?.records ?? [];
   // 当前表格字段列表，驱动动态列渲染。
   const fields = data?.fields ?? [];
+  // 分组选项。
+  const fieldOptions = useMemo(
+    () => fields.map((field) => ({ value: field.id, label: field.name, helper: field.type })),
+    [fields],
+  );
+  // 表格顶部密度更高的业务统计。
+  const statItems = useMemo(
+    () => [
+      { label: "记录", value: String(rows.length) },
+      { label: "字段", value: String(fields.length) },
+      { label: "公式字段", value: String(fields.filter((field) => field.type === "formula").length) },
+      { label: "关联字段", value: String(fields.filter((field) => field.type === "link").length) },
+    ],
+    [fields, rows.length],
+  );
   // 按分组状态计算后的渲染行。
   const groups = useMemo(
     () => groupRows(rows, fields, groupOne, groupTwo, closed),
@@ -62,6 +83,7 @@ export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
 
   /**
    * 切换指定分组的折叠状态。
+   *
    * @param key 分组唯一 key。
    */
   function toggle(key: string) {
@@ -76,35 +98,40 @@ export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
 
   return (
     <section className="workspace">
-      <div className="toolbar">
-        <div className="group-tools">
-          <span className="muted">分组</span>
-          <select className="config-input" value={groupOne} onChange={(e) => setGroupOne(e.target.value)}>
-            <option value="">一级分组</option>
-            {fields.map((field) => (
-              <option value={field.id} key={field.id}>
-                {field.name}
-              </option>
-            ))}
-          </select>
-          <select className="config-input" value={groupTwo} onChange={(e) => setGroupTwo(e.target.value)}>
-            <option value="">二级分组</option>
-            {fields.map((field) => (
-              <option value={field.id} key={field.id}>
-                {field.name}
-              </option>
-            ))}
-          </select>
-          {groupOne ? (
-            <button className="mini-btn" onClick={() => setClosed(new Set())} type="button">
-              展开全部
-            </button>
-          ) : null}
+      <div className="workspace-head">
+        <div className="workspace-stats">
+          {statItems.map((item) => (
+            <div className="workspace-stat" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
         </div>
-        <button className="btn" onClick={onAdd} type="button">
-          新增记录
-        </button>
+
+        <div className="toolbar">
+          <div className="toolbar-main">
+            <div className="toolbar-copy">
+              <strong>分组视图</strong>
+              <span>一级分组和二级分组在同一行切换，表格区域单独滚动。</span>
+            </div>
+            <div className="group-tools">
+              <Select onValueChange={setGroupOne} options={fieldOptions} placeholder="一级分组" value={groupOne} />
+              <Select onValueChange={setGroupTwo} options={fieldOptions} placeholder="二级分组" value={groupTwo} />
+            </div>
+          </div>
+          <div className="toolbar-actions">
+            {groupOne ? (
+              <Button onClick={() => setClosed(new Set())} size="sm" type="button" variant="outline">
+                展开全部
+              </Button>
+            ) : null}
+            <Button onClick={onAdd} type="button">
+              新增记录
+            </Button>
+          </div>
+        </div>
       </div>
+
       <div className="grid-wrap">
         <table className="data-grid">
           <thead>
@@ -121,12 +148,12 @@ export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
               ) : (
                 <tr className={`group-row level-${group.level}`} key={group.key}>
                   <td colSpan={Math.max(fields.length, 1)}>
-                    <button className="group-toggle" onClick={() => toggle(group.key)} type="button">
+                    <Button className="group-toggle" onClick={() => toggle(group.key)} type="button" variant="ghost">
                       <span>{group.closed ? "+" : "-"}</span>
                       <strong>{group.label}</strong>
                       <em>{group.count} 条</em>
                       <small>{group.sumText}</small>
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ),
@@ -140,13 +167,13 @@ export function DynamicGrid({ data, loading = false, onPatch, onAdd }: Props) {
 
 /**
  * 渲染一条普通数据行。
+ *
  * @param props 行数据、字段列表和编辑回调。
- * @returns 表格行组件。
  */
 function DataRow({
-  row,
   fields,
   onPatch,
+  row,
 }: {
   row: RowData;
   fields: FieldMeta[];
@@ -165,8 +192,8 @@ function DataRow({
 
 /**
  * 根据字段类型渲染对应的单元格编辑器。
+ *
  * @param props 单元格数据、字段元数据和提交回调。
- * @returns 可编辑或只读的单元格内容。
  */
 function CellEditor({
   cell,
@@ -175,7 +202,7 @@ function CellEditor({
 }: {
   cell: CellData | undefined;
   field: FieldMeta;
-  onCommit: (value: unknown) => void;
+  onCommit: (value: unknown) => Promise<void> | void;
 }) {
   // 当前单元格原始值。
   const value = cell?.value;
@@ -210,58 +237,53 @@ function CellEditor({
   if (field.type === "tag" || field.type === "singleSelect") {
     return (
       <div className="cell-editor">
-        <OptionCell field={field} mode="single" value={draft} onChange={setDraft} />
-        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+        <OptionCell field={field} mode="single" value={draft} onChange={(next) => setDraft(next as string)} />
+        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
       </div>
     );
   }
   if (field.type === "multiSelect") {
     return (
       <div className="cell-editor">
-        <OptionCell field={field} mode="multi" value={draft} onChange={setDraft} />
-        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+        <OptionCell field={field} mode="multi" value={draft} onChange={(next) => setDraft(next as string[])} />
+        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
       </div>
     );
   }
   if (field.type === "aiText") {
     return (
       <div className="cell-editor">
-        <textarea className="cell-area" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
-        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+        <Textarea className="cell-area" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
+        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
       </div>
     );
   }
   if (field.type === "number") {
     return (
       <div className="cell-editor">
-        <input
-          className="cell-input"
-          inputMode="decimal"
-          value={String(draft)}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+        <Input inputMode="decimal" placeholder="输入数值" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
+        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
       </div>
     );
   }
   return (
     <div className="cell-editor">
-      <input className="cell-input" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
-      <EditActions dirty={dirty} saving={saving} onConfirm={confirm} onReset={() => setDraft(initial)} />
+      <Input placeholder="输入内容" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
+      <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
     </div>
   );
 }
 
 /**
  * 渲染单元格确认和重置按钮。
+ *
  * @param props 修改状态、提交状态、确认回调和重置回调。
- * @returns 单元格编辑操作区。
  */
 function EditActions({
   dirty,
-  saving,
   onConfirm,
   onReset,
+  saving,
 }: {
   dirty: boolean;
   saving: boolean;
@@ -271,25 +293,25 @@ function EditActions({
   if (!dirty) return null;
   return (
     <div className="cell-actions">
-      <button className="mini-btn primary" disabled={saving} onClick={onConfirm} type="button">
+      <Button className="cell-btn" disabled={saving} onClick={onConfirm} size="sm" type="button">
         {saving ? "保存中" : "确认"}
-      </button>
-      <button className="mini-btn" disabled={saving} onClick={onReset} type="button">
+      </Button>
+      <Button className="cell-btn" disabled={saving} onClick={onReset} size="sm" type="button" variant="outline">
         重置
-      </button>
+      </Button>
     </div>
   );
 }
 
 /**
  * 渲染表格局部加载状态。
+ *
  * @param props 加载提示文本。
- * @returns 表格加载占位。
  */
 function LoadingBlock({ text }: { text: string }) {
   return (
     <div className="workspace loading-box">
-      <span className="loader" />
+      <Skeleton className="loading-icon" />
       <strong>{text}</strong>
     </div>
   );
@@ -297,14 +319,14 @@ function LoadingBlock({ text }: { text: string }) {
 
 /**
  * 渲染单选、多选和标签字段的可视化选项。
+ *
  * @param props 字段配置、选择模式、当前草稿值和草稿变更回调。
- * @returns 标签式选择器。
  */
 function OptionCell({
   field,
   mode,
-  value,
   onChange,
+  value,
 }: {
   field: FieldMeta;
   mode: "single" | "multi";
@@ -318,8 +340,8 @@ function OptionCell({
 
   if (options.length === 0) {
     return (
-      <input
-        className="cell-input"
+      <Input
+        placeholder={mode === "multi" ? "多个值请用逗号分隔" : "输入选项值"}
         value={mode === "multi" ? toList(value).join(", ") : String(value ?? "")}
         onChange={(event) => onChange(mode === "multi" ? splitList(event.target.value) : event.target.value)}
       />
@@ -334,14 +356,16 @@ function OptionCell({
         {options.map((option, index) => {
           const active = selectedList.includes(option);
           return (
-            <button
+            <Button
               className={`option-chip tone-${index % 6} ${active ? "active" : ""}`}
               key={option}
               onClick={() => onChange(toggleValue(selectedList, option))}
+              size="sm"
               type="button"
+              variant={active ? "default" : "outline"}
             >
               {option}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -351,14 +375,16 @@ function OptionCell({
   return (
     <div className="option-grid">
       {options.map((option, index) => (
-        <button
+        <Button
           className={`option-chip tone-${index % 6} ${selected === option ? "active" : ""}`}
           key={option}
           onClick={() => onChange(option)}
+          size="sm"
           type="button"
+          variant={selected === option ? "default" : "outline"}
         >
           {option}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -366,17 +392,17 @@ function OptionCell({
 
 /**
  * 渲染 AI 风险评分单元格。
+ *
  * @param value AI 返回的评分对象。
- * @returns 风险评分展示内容。
  */
 function ScoreCell({ value }: { value: unknown }) {
   if (!value || typeof value !== "object") return <span className="muted">待生成</span>;
   const item = value as { score?: number; level?: string; reason?: string };
   return (
     <div>
-      <span className="chip">
+      <Badge className="chip">
         {item.level ?? "未定"} · {item.score ?? "-"}
-      </span>
+      </Badge>
       <div className="muted">{item.reason}</div>
     </div>
   );
@@ -384,6 +410,7 @@ function ScoreCell({ value }: { value: unknown }) {
 
 /**
  * 将记录按一到两级字段分组，并按折叠状态过滤子行。
+ *
  * @param rows 原始记录列表。
  * @param fields 字段元数据列表。
  * @param first 一级分组字段 ID。
@@ -425,6 +452,7 @@ function groupRows(rows: RowData[], fields: FieldMeta[], first: string, second: 
 
 /**
  * 按指定字段把记录分桶。
+ *
  * @param rows 原始记录列表。
  * @param fieldId 分组字段 ID。
  * @returns 分组名到记录列表的映射。
@@ -444,6 +472,7 @@ function bucketRows(rows: RowData[], fieldId: string) {
 
 /**
  * 创建分组行并计算聚合说明。
+ *
  * @param label 分组展示名称。
  * @param rows 分组下的记录列表。
  * @param fields 字段元数据列表。
@@ -470,6 +499,7 @@ function groupHeader(
 
 /**
  * 读取字段配置中的选项列表。
+ *
  * @param field 字段元数据。
  * @returns 字符串选项数组。
  */
@@ -481,6 +511,7 @@ function getOptions(field: FieldMeta) {
 
 /**
  * 把逗号分隔文本转为选项数组。
+ *
  * @param value 用户输入的选项文本。
  * @returns 清理后的选项数组。
  */
@@ -493,6 +524,7 @@ function splitList(value: string) {
 
 /**
  * 把任意单元格值规范成字符串数组。
+ *
  * @param value 单元格原始值。
  * @returns 字符串数组。
  */
@@ -504,6 +536,7 @@ function toList(value: unknown) {
 
 /**
  * 在多选列表中切换一个选项。
+ *
  * @param values 当前已选择的选项。
  * @param option 要切换的选项。
  * @returns 切换后的新数组。
@@ -514,6 +547,7 @@ function toggleValue(values: string[], option: string) {
 
 /**
  * 把后端单元格值转换成前端编辑草稿。
+ *
  * @param field 字段元数据。
  * @param value 后端单元格值。
  * @returns 编辑器使用的草稿值。
@@ -526,6 +560,7 @@ function draftFromValue(field: FieldMeta, value: unknown) {
 
 /**
  * 把前端编辑草稿转换成后端单元格值。
+ *
  * @param field 字段元数据。
  * @param draft 当前编辑草稿。
  * @returns 提交给后端的单元格值。
@@ -538,6 +573,7 @@ function valueFromDraft(field: FieldMeta, draft: unknown) {
 
 /**
  * 比较两个草稿值是否一致。
+ *
  * @param left 左侧草稿值。
  * @param right 右侧草稿值。
  * @returns 草稿值一致时返回 true。
@@ -548,6 +584,7 @@ function sameDraft(left: unknown, right: unknown) {
 
 /**
  * 汇总指定字段在记录列表中的数值。
+ *
  * @param rows 参与聚合的记录列表。
  * @param fieldId 数字或公式字段 ID。
  * @returns 保留两位小数的汇总文本。
@@ -558,6 +595,7 @@ function sumRows(rows: RowData[], fieldId: string) {
 
 /**
  * 格式化只读字段值。
+ *
  * @param value 原始字段值。
  * @returns 展示文本。
  */

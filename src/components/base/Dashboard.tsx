@@ -1,64 +1,83 @@
-﻿/**
- * 渲染博洛尼定制交付仪表盘，包括订单金额、供应商风险和交付预警。
+/**
+ * 渲染博洛尼定制交付仪表盘，包括采购总金额和供应商风险分布。
  */
 
 "use client";
 
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import type { DashboardData } from "./types";
+
+const riskColors = ["#b89157", "#4a433c", "#a8453d", "#8f6f3f", "#394b59"];
 
 /**
  * 渲染博洛尼定制交付仪表盘。
  *
- * @param props 包含仪表盘统计数据，未加载时允许为 null。
- * @returns 定制订单金额、供应商风险分布图和交付预警列表。
+ * @param props 包含仪表盘统计数据和加载状态。
+ * @returns 定制订单金额和供应商风险分布图。
  */
-export function Dashboard({ data }: { data: DashboardData | null }) {
+export function Dashboard({ data, loading = false }: { data: DashboardData | null; loading?: boolean }) {
   // 定制订单公式汇总后的总金额。
   const total = data?.totalAmount ?? 0;
-  // 当前低于安全库存、可能影响项目交付的产品列表。
-  const warnings = data?.warnings ?? [];
+  // 供应商风险等级分布。
+  const riskDist = data?.riskDist ?? [];
+  // 供应商总数，用于展示风险分布统计口径。
+  const supplierCount = riskDist.reduce((sum, item) => sum + item.value, 0);
+
+  if (loading) {
+    return (
+      <section className="dashboard-page">
+        <div className="dash-summary">
+          <Skeleton className="dash-skeleton" />
+          <Skeleton className="dash-skeleton" />
+        </div>
+        <Skeleton className="dash-chart-skeleton" />
+      </section>
+    );
+  }
 
   return (
-    <section className="panel">
-      <h3>定制交付仪表盘</h3>
-      <p>定制订单总额、供应商风险和项目交付缺口。</p>
-      <div className="metric-row" style={{ marginTop: 12 }}>
-        <div className="metric">
-          <span className="muted">定制订单总额</span>
-          <strong>{formatMoney(total)}</strong>
-        </div>
-        <div className="metric">
-          <span className="muted">供应商风险</span>
-          <strong>{data?.riskDist.length ?? 0}</strong>
-        </div>
-        <div className="metric">
-          <span className="muted">交付预警</span>
-          <strong>{warnings.length}</strong>
-        </div>
+    <section className="dashboard-page">
+      <div className="dash-summary">
+        <Card>
+          <CardHeader>
+            <CardDescription>采购总金额统计</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <strong className="dash-value">{formatMoney(total)}</strong>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>风险等级供应商</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <strong className="dash-value">{supplierCount}</strong>
+          </CardContent>
+        </Card>
       </div>
-      <div className="chart-box">
-        <ResponsiveContainer>
-          <BarChart data={data?.riskDist ?? []}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#ded8cf" />
-            <XAxis dataKey="name" />
-            <YAxis allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#b89157" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="warn-list">
-        {warnings.map((item) => (
-          <div className="warn-item" key={item.id}>
-            <strong>{item.sku}</strong>
-            <div className="muted">
-              当前 {item.current} / 安全 {item.safe}，交付缺口 {item.shortage}
-            </div>
-          </div>
-        ))}
-      </div>
+      <Card className="dash-chart-card">
+        <CardHeader>
+          <CardTitle>各风险等级供应商数量分布</CardTitle>
+          <CardDescription>按供应商表中的风险等级字段聚合。</CardDescription>
+        </CardHeader>
+        <CardContent className="dash-chart">
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={riskDist} dataKey="value" nameKey="name" innerRadius={72} outerRadius={118} paddingAngle={2}>
+                {riskDist.map((item, index) => (
+                  <Cell fill={riskColors[index % riskColors.length]} key={item.name} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
     </section>
   );
 }

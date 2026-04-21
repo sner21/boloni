@@ -9,15 +9,6 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
-import {
-  createFieldSchema,
-  createRecordSchema,
-  createTableSchema,
-  patchCellsSchema,
-  riskReqSchema,
-  summaryReqSchema,
-} from "./base";
-
 extendZodWithOpenApi(z);
 
 // OpenAPI 注册表，集中登记 schema 和 route。
@@ -39,12 +30,17 @@ const tableSchema = registry.register(
   }),
 );
 
-registry.register("CreateTable", createTableSchema);
-registry.register("CreateField", createFieldSchema);
-registry.register("CreateRecord", createRecordSchema);
-registry.register("PatchCells", patchCellsSchema);
-registry.register("RiskRequest", riskReqSchema);
-registry.register("SummaryRequest", summaryReqSchema);
+// OpenAPI 文档使用的轻量请求 schema，避免递归公式 schema 影响文档生成。
+const createTableDoc = z.object({ name: z.string(), slug: z.string() });
+const createFieldDoc = z.object({
+  name: z.string(),
+  type: z.string(),
+  config: z.record(z.string(), z.unknown()),
+});
+const createRecordDoc = z.object({ cells: z.record(z.string(), z.unknown()) });
+const patchCellsDoc = z.object({ cells: z.record(z.string(), z.unknown()) });
+const riskReqDoc = z.object({ recordId: z.string().uuid() });
+const summaryReqDoc = z.object({ recordId: z.string().uuid() });
 
 /**
  * 创建 JSON 请求体定义。
@@ -70,7 +66,7 @@ function jsonResponse(schema: z.ZodTypeAny, description = "OK") {
 registry.registerPath({
   method: "post",
   path: "/api/tables",
-  request: { body: jsonBody(createTableSchema) },
+  request: { body: jsonBody(createTableDoc) },
   responses: { 200: jsonResponse(tableSchema), 400: jsonResponse(errorSchema, "请求错误") },
 });
 
@@ -85,7 +81,7 @@ registry.registerPath({
   path: "/api/tables/{tableId}/fields",
   request: {
     params: z.object({ tableId: z.string().uuid() }),
-    body: jsonBody(createFieldSchema),
+    body: jsonBody(createFieldDoc),
   },
   responses: { 200: jsonResponse(z.unknown()), 400: jsonResponse(errorSchema, "请求错误") },
 });
@@ -95,7 +91,7 @@ registry.registerPath({
   path: "/api/tables/{tableId}/records",
   request: {
     params: z.object({ tableId: z.string().uuid() }),
-    body: jsonBody(createRecordSchema),
+    body: jsonBody(createRecordDoc),
   },
   responses: { 200: jsonResponse(z.unknown()), 400: jsonResponse(errorSchema, "请求错误") },
 });
@@ -112,7 +108,7 @@ registry.registerPath({
   path: "/api/records/{recordId}/cells",
   request: {
     params: z.object({ recordId: z.string().uuid() }),
-    body: jsonBody(patchCellsSchema),
+    body: jsonBody(patchCellsDoc),
   },
   responses: { 200: jsonResponse(z.unknown()), 400: jsonResponse(errorSchema, "请求错误") },
 });
@@ -126,14 +122,14 @@ registry.registerPath({
 registry.registerPath({
   method: "post",
   path: "/api/ai/risk-score",
-  request: { body: jsonBody(riskReqSchema) },
+  request: { body: jsonBody(riskReqDoc) },
   responses: { 200: jsonResponse(z.unknown()), 400: jsonResponse(errorSchema, "请求错误") },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/ai/order-summary",
-  request: { body: jsonBody(summaryReqSchema) },
+  request: { body: jsonBody(summaryReqDoc) },
   responses: { 200: jsonResponse(z.unknown()), 400: jsonResponse(errorSchema, "请求错误") },
 });
 
