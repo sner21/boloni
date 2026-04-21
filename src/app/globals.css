@@ -816,7 +816,14 @@ button:disabled {
 
 .toolbar-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.form-state {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .group-tools {
@@ -858,6 +865,10 @@ table.data-grid {
   background: #fcfaf7;
   font-size: 13px;
   font-weight: 700;
+}
+
+.dirty-row td {
+  background: #fffdf8;
 }
 
 .cell-editor {

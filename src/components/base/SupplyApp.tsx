@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dashboard } from "./Dashboard";
 import { DynamicGrid } from "./DynamicGrid";
 import { FieldPanel } from "./FieldPanel";
-import type { DashboardData, FieldMeta, TableData, TableMeta } from "./types";
+import type { DashboardData, TableData, TableMeta } from "./types";
 
 type AppPage = "table" | "dashboard" | "fields";
 
@@ -102,13 +102,20 @@ export function SupplyApp() {
   }, []);
 
   /**
+   * 刷新当前业务表数据和相关衍生数据。
+   */
+  const reloadTable = useCallback(async () => {
+    if (selected) await loadData(selected);
+    if (page === "dashboard") await loadDash();
+  }, [loadDash, loadData, page, selected]);
+
+  /**
    * 刷新当前页面所需数据。
    */
   const refresh = useCallback(async () => {
     await loadTables();
-    if (selected) await loadData(selected);
-    if (page === "dashboard") await loadDash();
-  }, [loadDash, loadData, loadTables, page, selected]);
+    await reloadTable();
+  }, [loadTables, reloadTable]);
 
   useEffect(() => {
     loadTables().catch(() => setStatus("博洛尼业务表加载失败。"));
@@ -138,17 +145,14 @@ export function SupplyApp() {
    * 提交单元格编辑并刷新页面数据。
    *
    * @param recordId 被编辑的记录 ID。
-   * @param field 被编辑的字段元数据。
-   * @param value 新单元格值。
+   * @param cells 当前整行已修改的单元格补丁。
    */
-  async function patchCell(recordId: string, field: FieldMeta, value: unknown) {
+  async function patchCell(recordId: string, cells: Record<string, unknown>) {
     await fetch(`/api/records/${recordId}/cells`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cells: { [field.id]: value } }),
+      body: JSON.stringify({ cells }),
     });
-    await loadData(selected);
-    if (page === "dashboard") await loadDash();
   }
 
   /**
@@ -161,7 +165,7 @@ export function SupplyApp() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cells: {} }),
     });
-    await loadData(selected);
+    await reloadTable();
     setStatus("定制协同记录已创建。");
   }
 
@@ -181,7 +185,7 @@ export function SupplyApp() {
         body: JSON.stringify({ recordId: row.id }),
       });
     }
-    await loadData(selected);
+    await reloadTable();
     setStatus("博洛尼 AI 协同字段已更新。");
   }
 
@@ -192,7 +196,7 @@ export function SupplyApp() {
     setStatus("正在执行定制交付预警...");
     const res = await fetch("/api/automation/inventory-warning", { method: "POST" });
     const result = await res.json();
-    await loadData(selected);
+    await reloadTable();
     setStatus(`交付预警完成，新增 ${result.created?.length ?? 0} 条定制采购申请。`);
   }
 
@@ -295,15 +299,6 @@ export function SupplyApp() {
               </div>
             </div>
 
-            <div className="page-stats">
-              {pageStats.map((item) => (
-                <div className="page-stat" key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
-            </div>
-
             <div className="page-status">
               <span>{status}</span>
             </div>
@@ -315,7 +310,9 @@ export function SupplyApp() {
           {page === "fields" ? (
             <FieldPanel fields={data?.fields ?? []} onCreated={refresh} setStatus={setStatus} table={selectedTable} tables={tables} />
           ) : null}
-          {page === "table" ? <DynamicGrid data={data} loading={loadingData} onAdd={addRecord} onPatch={patchCell} /> : null}
+          {page === "table" ? (
+            <DynamicGrid data={data} loading={loadingData} onAdd={addRecord} onPatch={patchCell} onReload={reloadTable} />
+          ) : null}
         </div>
       </section>
     </main>

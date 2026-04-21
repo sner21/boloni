@@ -7,7 +7,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 
 import type { CellData, FieldMeta, TableData } from "./types";
@@ -17,8 +16,10 @@ type Props = {
   cell: CellData;
   /** 当前关联字段元数据，config 中包含 targetTableId。 */
   field: FieldMeta;
-  /** 选择目标记录后的提交回调。 */
-  onCommit: (value: unknown) => Promise<void> | void;
+  /** 当前整行表单中的关联草稿值。 */
+  value: string;
+  /** 关联草稿变更回调。 */
+  onChange: (value: string) => void;
 };
 
 // 目标表记录缓存，避免同一张表在多个关联单元格中重复请求。
@@ -27,15 +28,11 @@ const tableCache = new Map<string, Promise<TableData | null>>();
 /**
  * 渲染关联记录选择器。
  *
- * @param props 当前单元格、字段配置和提交回调。
+ * @param props 当前单元格、字段配置和整行草稿回调。
  */
-export function LinkCell({ cell, field, onCommit }: Props) {
+export function LinkCell({ cell, field, onChange, value }: Props) {
   // 目标表的记录数据，用于下拉选择。
   const [data, setData] = useState<TableData | null>(null);
-  // 当前关联选择草稿，点击确认后才提交后端。
-  const [draft, setDraft] = useState(cell.ids?.[0] ?? "");
-  // 当前关联单元格是否正在保存。
-  const [saving, setSaving] = useState(false);
   // 关联字段配置中的目标表 ID。
   const targetTableId = String(field.config.targetTableId ?? "");
 
@@ -46,31 +43,11 @@ export function LinkCell({ cell, field, onCommit }: Props) {
       .catch(() => setData(null));
   }, [targetTableId]);
 
-  useEffect(() => {
-    setDraft(cell.ids?.[0] ?? "");
-  }, [cell.ids]);
-
-  // 当前已保存的目标记录 ID，MVP 中默认展示第一条关联。
-  const selected = cell.ids?.[0] ?? "";
-  // 当前关联草稿是否已修改。
-  const dirty = draft !== selected;
   // 下拉选择项，使用目标记录的首个文本类字段作为标题。
   const choices = useMemo(() => {
     if (!data) return [];
     return data.records.map((row) => ({ value: row.id, label: rowTitle(data, row.id) }));
   }, [data]);
-
-  /**
-   * 确认提交当前关联草稿。
-   */
-  async function confirm() {
-    setSaving(true);
-    try {
-      await onCommit(draft ? [draft] : []);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="cell-editor">
@@ -81,17 +58,7 @@ export function LinkCell({ cell, field, onCommit }: Props) {
           </Badge>
         ))}
       </div>
-      <Select onValueChange={setDraft} options={choices} placeholder="选择记录" value={draft} />
-      {dirty ? (
-        <div className="cell-actions">
-          <Button className="cell-btn" disabled={saving} onClick={confirm} size="sm" type="button">
-            {saving ? "保存中" : "确认"}
-          </Button>
-          <Button className="cell-btn" disabled={saving} onClick={() => setDraft(selected)} size="sm" type="button" variant="outline">
-            重置
-          </Button>
-        </div>
-      ) : null}
+      <Select onValueChange={onChange} options={choices} placeholder="选择记录" value={value} />
     </div>
   );
 }

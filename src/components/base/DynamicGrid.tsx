@@ -1,5 +1,5 @@
 /**
- * 渲染可动态编辑的多维表格，并提供多级分组折叠、聚合统计和选项字段选择器。
+ * 渲染可动态编辑的多维表格，并提供整表单统一确认、重置、多级分组和聚合统计。
  */
 
 "use client";
@@ -18,13 +18,17 @@ import type { CellData, FieldMeta, RowData, TableData } from "./types";
 type Props = {
   /** 当前表格的字段、记录和表元数据。 */
   data: TableData | null;
-  /** 单元格提交后的后端同步函数。 */
-  onPatch: (recordId: string, field: FieldMeta, value: unknown) => Promise<void>;
+  /** 单条记录补丁提交函数。 */
+  onPatch: (recordId: string, cells: Record<string, unknown>) => Promise<void>;
+  /** 整表单提交完成后的刷新函数。 */
+  onReload: () => Promise<void>;
   /** 新增空记录的处理函数。 */
   onAdd: () => Promise<void>;
   /** 当前表格数据是否正在加载。 */
   loading?: boolean;
 };
+
+type DraftMap = Record<string, Record<string, unknown>>;
 
 type GroupItem =
   /** 分组行，携带聚合统计和折叠状态。 */
@@ -37,13 +41,15 @@ type GroupItem =
  *
  * @param props 表格数据、编辑回调和新增记录回调。
  */
-export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
+export function DynamicGrid({ data, loading = false, onAdd, onPatch, onReload }: Props) {
   // 一级分组字段 ID。
   const [groupOne, setGroupOne] = useState("");
   // 二级分组字段 ID。
   const [groupTwo, setGroupTwo] = useState("");
   // 当前折叠的分组 key 集合。
   const [closed, setClosed] = useState<Set<string>>(new Set());
+  // 当前整表单是否正在提交。
+  const [saving, setSaving] = useState(false);
   // 当前表格记录列表，空数据时保持稳定数组。
   const rows = data?.records ?? [];
   // 当前表格字段列表，驱动动态列渲染。
@@ -63,11 +69,21 @@ export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
     ],
     [fields, rows.length],
   );
+  // 当前表格的初始草稿快照。
+  const initialDrafts = useMemo(() => buildTableDrafts(fields, rows), [fields, rows]);
+  // 整表单可编辑草稿，所有输入先写入这里。
+  const [drafts, setDrafts] = useState<DraftMap>(initialDrafts);
+  // 当前整表单的改动统计。
+  const dirtyState = useMemo(() => summarizeDirty(fields, rows, drafts, initialDrafts), [drafts, fields, initialDrafts, rows]);
   // 按分组状态计算后的渲染行。
   const groups = useMemo(
     () => groupRows(rows, fields, groupOne, groupTwo, closed),
     [closed, fields, groupOne, groupTwo, rows],
   );
+
+  useEffect(() => {
+    setDrafts(initialDrafts);
+  }, [initialDrafts]);
 
   if (loading) {
     return <LoadingBlock text="正在加载当前业务表数据..." />;
@@ -96,35 +112,79 @@ export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
     });
   }
 
+  /**
+   * 更新某条记录某个字段的整表单草稿值。
+   *
+   * @param recordId 目标记录 ID。
+   * @param fieldId 目标字段 ID。
+   * @param value 新草稿值。
+   */
+  function updateDraft(recordId: string, fieldId: string, value: unknown) {
+    setDrafts((current) => ({
+      ...current,
+      [recordId]: {
+        ...(current[recordId] ?? {}),
+        [fieldId]: value,
+      },
+    }));
+  }
+
+  /**
+   * 重置整个表单草稿。
+   */
+  function resetForm() {
+    setDrafts(initialDrafts);
+  }
+
+  /**
+   * 提交整个表单的所有改动。
+   */
+  async function submitForm() {
+    if (dirtyState.cellCount === 0) return;
+    setSaving(true);
+    try {
+      for (const row of rows) {
+        const patch = buildRowPatch(fields, drafts[row.id] ?? {}, initialDrafts[row.id] ?? {});
+        if (Object.keys(patch).length === 0) continue;
+        await onPatch(row.id, patch);
+      }
+      await onReload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="workspace">
       <div className="workspace-head">
-        <div className="workspace-stats">
-          {statItems.map((item) => (
-            <div className="workspace-stat" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
-        </div>
 
         <div className="toolbar">
           <div className="toolbar-main">
             <div className="toolbar-copy">
-              <strong>分组视图</strong>
-              <span>一级分组和二级分组在同一行切换，表格区域单独滚动。</span>
+              <strong>整表单编辑</strong>
+              <span>所有修改都会先进入统一草稿，确认时一次性提交，重置时整体回退。</span>
             </div>
             <div className="group-tools">
               <Select onValueChange={setGroupOne} options={fieldOptions} placeholder="一级分组" value={groupOne} />
               <Select onValueChange={setGroupTwo} options={fieldOptions} placeholder="二级分组" value={groupTwo} />
             </div>
           </div>
+
           <div className="toolbar-actions">
+            <span className="form-state">
+              {dirtyState.cellCount > 0 ? `已修改 ${dirtyState.rowCount} 行 / ${dirtyState.cellCount} 项` : "当前表单未修改"}
+            </span>
             {groupOne ? (
               <Button onClick={() => setClosed(new Set())} size="sm" type="button" variant="outline">
                 展开全部
               </Button>
             ) : null}
+            <Button onClick={resetForm} disabled={dirtyState.cellCount === 0 || saving} size="sm" type="button" variant="outline">
+              重置
+            </Button>
+            <Button onClick={submitForm} disabled={dirtyState.cellCount === 0 || saving} size="sm" type="button">
+              {saving ? "保存中" : "确认"}
+            </Button>
             <Button onClick={onAdd} type="button">
               新增记录
             </Button>
@@ -144,7 +204,14 @@ export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
           <tbody>
             {groups.map((group) =>
               group.kind === "row" ? (
-                <DataRow fields={fields} key={group.row.id} onPatch={onPatch} row={group.row} />
+                <DataRow
+                  dirty={dirtyState.rowIds.has(group.row.id)}
+                  drafts={drafts[group.row.id] ?? {}}
+                  fields={fields}
+                  key={group.row.id}
+                  onChange={updateDraft}
+                  row={group.row}
+                />
               ) : (
                 <tr className={`group-row level-${group.level}`} key={group.key}>
                   <td colSpan={Math.max(fields.length, 1)}>
@@ -168,22 +235,31 @@ export function DynamicGrid({ data, loading = false, onAdd, onPatch }: Props) {
 /**
  * 渲染一条普通数据行。
  *
- * @param props 行数据、字段列表和编辑回调。
+ * @param props 行数据、字段列表和整表单草稿回调。
  */
 function DataRow({
+  dirty,
+  drafts,
   fields,
-  onPatch,
+  onChange,
   row,
 }: {
   row: RowData;
   fields: FieldMeta[];
-  onPatch: Props["onPatch"];
+  drafts: Record<string, unknown>;
+  dirty: boolean;
+  onChange: (recordId: string, fieldId: string, value: unknown) => void;
 }) {
   return (
-    <tr>
+    <tr className={dirty ? "dirty-row" : undefined}>
       {fields.map((field) => (
         <td key={field.id}>
-          <CellEditor cell={row.cells[field.id]} field={field} onCommit={(value) => onPatch(row.id, field, value)} />
+          <CellEditor
+            cell={row.cells[field.id]}
+            field={field}
+            onChange={(value) => onChange(row.id, field.id, value)}
+            value={drafts[field.id]}
+          />
         </td>
       ))}
     </tr>
@@ -193,114 +269,39 @@ function DataRow({
 /**
  * 根据字段类型渲染对应的单元格编辑器。
  *
- * @param props 单元格数据、字段元数据和提交回调。
+ * @param props 单元格数据、字段元数据和整表单草稿回调。
  */
 function CellEditor({
   cell,
   field,
-  onCommit,
+  onChange,
+  value,
 }: {
   cell: CellData | undefined;
   field: FieldMeta;
-  onCommit: (value: unknown) => Promise<void> | void;
+  value: unknown;
+  onChange: (value: unknown) => void;
 }) {
-  // 当前单元格原始值。
-  const value = cell?.value;
-  // 当前编辑草稿，只有点击确认时才同步后端。
-  const [draft, setDraft] = useState(() => draftFromValue(field, value));
-  // 当前单元格是否正在提交。
-  const [saving, setSaving] = useState(false);
-  // 当前后端值对应的草稿格式，用于判断是否已修改。
-  const initial = useMemo(() => draftFromValue(field, value), [field, value]);
-  // 当前草稿是否和后端值不同。
-  const dirty = !sameDraft(draft, initial);
-
-  useEffect(() => {
-    setDraft(initial);
-  }, [initial]);
-
-  /**
-   * 确认提交当前单元格草稿。
-   */
-  async function confirm() {
-    setSaving(true);
-    try {
-      await onCommit(valueFromDraft(field, draft));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (field.type === "formula") return <span className="readonly">{formatValue(value)}</span>;
-  if (field.type === "link") return <LinkCell cell={cell ?? { value: [] }} field={field} onCommit={onCommit} />;
-  if (field.type === "aiScore") return <ScoreCell value={value} />;
-  if (field.type === "tag" || field.type === "singleSelect") {
+  if (field.type === "formula") return <span className="readonly">{formatValue(cell?.value)}</span>;
+  if (field.type === "link") {
     return (
-      <div className="cell-editor">
-        <OptionCell field={field} mode="single" value={draft} onChange={(next) => setDraft(next as string)} />
-        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
-      </div>
+      <LinkCell cell={cell ?? { value: [] }} field={field} onChange={(next) => onChange(next)} value={String(value ?? "")} />
     );
+  }
+  if (field.type === "aiScore") return <ScoreCell value={cell?.value} />;
+  if (field.type === "tag" || field.type === "singleSelect") {
+    return <OptionCell field={field} mode="single" onChange={(next) => onChange(next)} value={value} />;
   }
   if (field.type === "multiSelect") {
-    return (
-      <div className="cell-editor">
-        <OptionCell field={field} mode="multi" value={draft} onChange={(next) => setDraft(next as string[])} />
-        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
-      </div>
-    );
+    return <OptionCell field={field} mode="multi" onChange={(next) => onChange(next)} value={value} />;
   }
   if (field.type === "aiText") {
-    return (
-      <div className="cell-editor">
-        <Textarea className="cell-area" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
-        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
-      </div>
-    );
+    return <Textarea className="cell-area" value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />;
   }
   if (field.type === "number") {
-    return (
-      <div className="cell-editor">
-        <Input inputMode="decimal" placeholder="输入数值" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
-        <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
-      </div>
-    );
+    return <Input inputMode="decimal" placeholder="输入数值" value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />;
   }
-  return (
-    <div className="cell-editor">
-      <Input placeholder="输入内容" value={String(draft)} onChange={(event) => setDraft(event.target.value)} />
-      <EditActions dirty={dirty} onConfirm={confirm} onReset={() => setDraft(initial)} saving={saving} />
-    </div>
-  );
-}
-
-/**
- * 渲染单元格确认和重置按钮。
- *
- * @param props 修改状态、提交状态、确认回调和重置回调。
- */
-function EditActions({
-  dirty,
-  onConfirm,
-  onReset,
-  saving,
-}: {
-  dirty: boolean;
-  saving: boolean;
-  onConfirm: () => void;
-  onReset: () => void;
-}) {
-  if (!dirty) return null;
-  return (
-    <div className="cell-actions">
-      <Button className="cell-btn" disabled={saving} onClick={onConfirm} size="sm" type="button">
-        {saving ? "保存中" : "确认"}
-      </Button>
-      <Button className="cell-btn" disabled={saving} onClick={onReset} size="sm" type="button" variant="outline">
-        重置
-      </Button>
-    </div>
-  );
+  return <Input placeholder="输入内容" value={String(value ?? "")} onChange={(event) => onChange(event.target.value)} />;
 }
 
 /**
@@ -498,6 +499,71 @@ function groupHeader(
 }
 
 /**
+ * 构建整张表的初始草稿快照。
+ *
+ * @param fields 当前表字段列表。
+ * @param rows 当前表记录列表。
+ * @returns 以记录 ID 为 key 的整表单草稿对象。
+ */
+function buildTableDrafts(fields: FieldMeta[], rows: RowData[]) {
+  return Object.fromEntries(rows.map((row) => [row.id, buildRowDraft(fields, row)]));
+}
+
+/**
+ * 构建单条记录的初始草稿。
+ *
+ * @param fields 当前表字段列表。
+ * @param row 当前记录。
+ * @returns 以字段 ID 为 key 的记录草稿对象。
+ */
+function buildRowDraft(fields: FieldMeta[], row: RowData) {
+  return Object.fromEntries(fields.map((field) => [field.id, draftFromValue(field, row.cells[field.id]?.value)]));
+}
+
+/**
+ * 汇总整表单的改动情况。
+ *
+ * @param fields 当前表字段列表。
+ * @param rows 当前表记录列表。
+ * @param drafts 当前草稿快照。
+ * @param initialDrafts 初始草稿快照。
+ * @returns 改动的行数、字段数和行 ID 集合。
+ */
+function summarizeDirty(fields: FieldMeta[], rows: RowData[], drafts: DraftMap, initialDrafts: DraftMap) {
+  // 已修改的记录 ID 集合。
+  const rowIds = new Set<string>();
+  // 已修改的字段总数。
+  let cellCount = 0;
+
+  for (const row of rows) {
+    const patch = buildRowPatch(fields, drafts[row.id] ?? {}, initialDrafts[row.id] ?? {});
+    const changed = Object.keys(patch).length;
+    if (changed > 0) {
+      rowIds.add(row.id);
+      cellCount += changed;
+    }
+  }
+
+  return { rowCount: rowIds.size, cellCount, rowIds };
+}
+
+/**
+ * 构建单条记录的提交补丁。
+ *
+ * @param fields 当前表字段列表。
+ * @param drafts 当前记录草稿。
+ * @param initialDrafts 当前记录初始草稿。
+ * @returns 仅包含已改动字段的补丁对象。
+ */
+function buildRowPatch(fields: FieldMeta[], drafts: Record<string, unknown>, initialDrafts: Record<string, unknown>) {
+  return Object.fromEntries(
+    fields
+      .filter((field) => !sameDraft(drafts[field.id], initialDrafts[field.id]))
+      .map((field) => [field.id, valueFromDraft(field, drafts[field.id])]),
+  );
+}
+
+/**
  * 读取字段配置中的选项列表。
  *
  * @param field 字段元数据。
@@ -554,6 +620,7 @@ function toggleValue(values: string[], option: string) {
  */
 function draftFromValue(field: FieldMeta, value: unknown) {
   if (field.type === "multiSelect") return toList(value);
+  if (field.type === "link") return Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
   if (field.type === "number") return value == null ? "" : String(value);
   return value == null ? "" : String(value);
 }
@@ -567,6 +634,7 @@ function draftFromValue(field: FieldMeta, value: unknown) {
  */
 function valueFromDraft(field: FieldMeta, draft: unknown) {
   if (field.type === "multiSelect") return Array.isArray(draft) ? draft : toList(draft);
+  if (field.type === "link") return draft ? [String(draft)] : [];
   if (field.type === "number") return draft === "" ? null : draft;
   return draft;
 }
